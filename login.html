@@ -106,9 +106,10 @@
 
     // Google Sign-In Initialization
     function initGoogleAuth() {
-      const savedClientId = localStorage.getItem(DEFAULT_CLIENT_ID_KEY) || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+      const defaultClientId = '330236506368-38k618t0l8ick1rosohr9g3ui1teljhg.apps.googleusercontent.com';
+      const savedClientId = localStorage.getItem(DEFAULT_CLIENT_ID_KEY) || defaultClientId;
       const clientIdInput = document.getElementById('customClientId');
-      if (clientIdInput && savedClientId !== 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
+      if (clientIdInput) {
         clientIdInput.value = savedClientId;
       }
 
@@ -134,6 +135,10 @@
       }
     }
 
+    const AUTHORIZED_ADMIN_EMAILS = [
+      'poulami.13thmay@gmail.com'
+    ];
+
     // Handle Google Login Callback
     function handleGoogleCredentialResponse(response) {
       if (!response.credential) {
@@ -150,17 +155,26 @@
         }).join(''));
 
         const payload = JSON.parse(jsonPayload);
+        const userEmail = (payload.email || '').toLowerCase().trim();
+
+        // Strictly verify authorized admin email
+        const isAuthorized = AUTHORIZED_ADMIN_EMAILS.some(email => email.toLowerCase().trim() === userEmail);
+
+        if (!isAuthorized) {
+          showLoginAlert(`Access Denied: Account (${userEmail}) is not authorized. Only poulami.13thmay@gmail.com can log in.`, 'error');
+          return;
+        }
 
         const session = {
-          name: payload.name || 'Super Administrator',
-          email: payload.email || 'admin@educore.edu',
+          name: payload.name || 'Poulami',
+          email: userEmail,
           avatar: payload.picture || '',
           provider: 'google',
           loggedInAt: Date.now()
         };
 
         localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-        showLoginAlert(`Welcome back, ${session.name}! Redirecting...`, 'success');
+        showLoginAlert(`Welcome back, ${session.name}! Redirecting to Admin Dashboard...`, 'success');
         
         setTimeout(() => {
           window.location.href = 'admin.html';
