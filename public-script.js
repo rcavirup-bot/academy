@@ -57,6 +57,10 @@ class PublicAcademyApp {
     this.courses = [];
     this.academyProfile = null;
 
+    // Resolve tenant from Subdomain (e.g. prantik.pixelsetu.com) or URL Query (?academy=prantik)
+    this.currentAcademySlug = this.resolveTenant();
+    this.currentOwnerEmail = this.currentAcademySlug.includes('poulami') ? 'poulami.13thmay@gmail.com' : 'dasprantik76@gmail.com';
+
     this.cacheDOMElements();
     this.initData();
     this.bindEvents();
@@ -64,7 +68,7 @@ class PublicAcademyApp {
     this.initInputFormatters();
     this.render();
 
-    // Asynchronously synchronize courses and profile from Vercel KV Cloud
+    // Asynchronously synchronize courses and profile for this specific academy from MongoDB
     this.fetchCloudData();
 
     // Check initial hash
@@ -76,6 +80,50 @@ class PublicAcademyApp {
     } else {
       this.switchView('home');
     }
+  }
+
+  resolveTenant() {
+    // 1. Check Subdomain (e.g. prantik.pixelsetu.com or poulami.pixelsetu.com)
+    const hostname = window.location.hostname.toLowerCase();
+    const parts = hostname.split('.');
+    if (parts.length >= 3 || (parts.length === 2 && parts[1] === 'localhost')) {
+      const subdomain = parts[0];
+      if (subdomain !== 'www' && subdomain !== 'academy' && subdomain !== 'app') {
+        return subdomain;
+      }
+    }
+
+    // 2. Check Query Parameters (?academy=prantik or ?academy=poulami)
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryParam = urlParams.get('academy') || urlParams.get('owner');
+    if (queryParam) {
+      return queryParam.toLowerCase().trim();
+    }
+
+    return 'prantik'; // Default fallback
+  }
+
+  getStorageKey(baseKey) {
+    return `${baseKey}_${this.currentOwnerEmail}`;
+  }
+
+  getDefaultProfile() {
+    if (this.currentOwnerEmail.includes('poulami')) {
+      return {
+        academyName: 'Poulami Dance Academy',
+        ownerName: 'Poulami',
+        email: this.currentOwnerEmail,
+        phone: '9876543211',
+        slug: 'poulami'
+      };
+    }
+    return {
+      academyName: 'Prantik Computer Academy',
+      ownerName: 'Prantik Das',
+      email: this.currentOwnerEmail,
+      phone: '9876543210',
+      slug: 'prantik'
+    };
   }
 
   cacheDOMElements() {
@@ -121,75 +169,59 @@ class PublicAcademyApp {
 
     // Dropdown Containers & Inputs
     this.regGenderDropdown = document.getElementById('regGenderDropdown');
-    this.regGenderTrigger = document.getElementById('regGenderTrigger');
     this.regGenderDisplay = document.getElementById('regGenderDisplay');
+    this.regGenderInput = document.getElementById('regGenderInput');
     this.regGenderMenu = document.getElementById('regGenderMenu');
-    this.regGenderInput = document.getElementById('regGender');
 
     this.regMaritalStatusDropdown = document.getElementById('regMaritalStatusDropdown');
-    this.regMaritalStatusTrigger = document.getElementById('regMaritalStatusTrigger');
     this.regMaritalStatusDisplay = document.getElementById('regMaritalStatusDisplay');
+    this.regMaritalStatusInput = document.getElementById('regMaritalStatusInput');
     this.regMaritalStatusMenu = document.getElementById('regMaritalStatusMenu');
-    this.regMaritalStatusInput = document.getElementById('regMaritalStatus');
 
     this.regCategoryDropdown = document.getElementById('regCategoryDropdown');
-    this.regCategoryTrigger = document.getElementById('regCategoryTrigger');
     this.regCategoryDisplay = document.getElementById('regCategoryDisplay');
+    this.regCategoryInput = document.getElementById('regCategoryInput');
     this.regCategoryMenu = document.getElementById('regCategoryMenu');
-    this.regCategoryInput = document.getElementById('regCategory');
 
     this.regReligionDropdown = document.getElementById('regReligionDropdown');
-    this.regReligionTrigger = document.getElementById('regReligionTrigger');
     this.regReligionDisplay = document.getElementById('regReligionDisplay');
+    this.regReligionInput = document.getElementById('regReligionInput');
     this.regReligionMenu = document.getElementById('regReligionMenu');
-    this.regReligionInput = document.getElementById('regReligion');
 
     this.regStateDropdown = document.getElementById('regStateDropdown');
-    this.regStateTrigger = document.getElementById('regStateTrigger');
     this.regStateDisplay = document.getElementById('regStateDisplay');
+    this.regStateInput = document.getElementById('regStateInput');
     this.regStateMenu = document.getElementById('regStateMenu');
-    this.regStateInput = document.getElementById('regState');
 
     this.regDistrictDropdown = document.getElementById('regDistrictDropdown');
-    this.regDistrictTrigger = document.getElementById('regDistrictTrigger');
     this.regDistrictDisplay = document.getElementById('regDistrictDisplay');
+    this.regDistrictInput = document.getElementById('regDistrictInput');
     this.regDistrictMenu = document.getElementById('regDistrictMenu');
-    this.regDistrictInput = document.getElementById('regDistrict');
 
     this.regQualificationDropdown = document.getElementById('regQualificationDropdown');
-    this.regQualificationTrigger = document.getElementById('regQualificationTrigger');
     this.regQualificationDisplay = document.getElementById('regQualificationDisplay');
+    this.regQualificationInput = document.getElementById('regQualificationInput');
     this.regQualificationMenu = document.getElementById('regQualificationMenu');
-    this.regQualificationInput = document.getElementById('regQualification');
 
     this.regCourseDropdown = document.getElementById('regCourseDropdown');
-    this.regCourseTrigger = document.getElementById('regCourseTrigger');
     this.regCourseDisplay = document.getElementById('regCourseDisplay');
+    this.regCourseInput = document.getElementById('regCourseInput');
     this.regCourseMenu = document.getElementById('regCourseMenu');
-    this.regCourseInput = document.getElementById('regCourse');
 
-    // Certificate Search & Verification Elements
-    this.certificateSearchForm = document.getElementById('certificateSearchForm');
+    // Certificate Verification Form Elements
+    this.certSearchForm = document.getElementById('certSearchForm');
     this.certPhone = document.getElementById('certPhone');
     this.certPhoneError = document.getElementById('certPhoneError');
     this.certDob = document.getElementById('certDob');
-    this.btnSearchCert = document.getElementById('btnSearchCert');
+    this.btnSearchCertificate = document.getElementById('btnSearchCertificate');
+
+    this.certResultContainer = document.getElementById('certResultContainer');
     this.certNotFoundState = document.getElementById('certNotFoundState');
     this.certIncompleteState = document.getElementById('certIncompleteState');
     this.certIncompleteDesc = document.getElementById('certIncompleteDesc');
-    this.certResultContainer = document.getElementById('certResultContainer');
-    this.btnResetCertSearch = document.getElementById('btnResetCertSearch');
     this.btnPrintCertificate = document.getElementById('btnPrintCertificate');
 
-    // Certificate Document Preview Elements
-    this.certDocAcademyName = document.getElementById('certDocAcademyName');
-    this.certDocStudentName = document.getElementById('certDocStudentName');
-    this.certDocCourseTitle = document.getElementById('certDocCourseTitle');
-    this.certDocStudentId = document.getElementById('certDocStudentId');
-    this.certDocIssueDate = document.getElementById('certDocIssueDate');
-    this.certDocSignatory = document.getElementById('certDocSignatory');
-
-    // Success Modal Elements
+    // Success Modal
     this.successModal = document.getElementById('registrationSuccessModal');
     this.modalStudentId = document.getElementById('modalStudentId');
     this.modalStudentName = document.getElementById('modalStudentName');
@@ -197,24 +229,25 @@ class PublicAcademyApp {
     this.modalRegDate = document.getElementById('modalRegDate');
     this.btnCloseSuccessModal = document.getElementById('btnCloseSuccessModal');
 
+    // Toast Container
     this.toastContainer = document.getElementById('toastContainer');
   }
 
   initData() {
-    // Load Academy Profile
-    const rawProfile = localStorage.getItem(STORAGE_KEYS.ACADEMY_PROFILE);
+    // Load Academy Profile for active tenant
+    const rawProfile = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.ACADEMY_PROFILE));
     if (rawProfile) {
       try {
         this.academyProfile = JSON.parse(rawProfile);
       } catch (e) {
-        this.academyProfile = { academyName: 'Academy', ownerName: 'Academy Administrator' };
+        this.academyProfile = this.getDefaultProfile();
       }
     } else {
-      this.academyProfile = { academyName: 'Academy', ownerName: 'Academy Administrator' };
+      this.academyProfile = this.getDefaultProfile();
     }
 
-    // Load Available Courses
-    const rawCourses = localStorage.getItem(STORAGE_KEYS.COURSES);
+    // Load Available Courses for active tenant
+    const rawCourses = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.COURSES));
     if (rawCourses) {
       try {
         this.courses = JSON.parse(rawCourses) || [];
@@ -228,36 +261,40 @@ class PublicAcademyApp {
 
   async fetchCloudData() {
     try {
-      const response = await fetch('/api/data', { cache: 'no-store' });
+      const response = await fetch(`/api/data?academy=${encodeURIComponent(this.currentAcademySlug)}`, { cache: 'no-store' });
       if (!response.ok) return false;
       const json = await response.json();
       if (json && json.success && json.data) {
+        if (json.tenant && json.tenant.ownerEmail) {
+          this.currentOwnerEmail = json.tenant.ownerEmail;
+        }
+
         const { profile, courses, students, authToken } = json.data;
 
         if (Array.isArray(courses) && courses.length > 0) {
           this.courses = courses;
-          localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(this.courses));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.COURSES), JSON.stringify(this.courses));
           this.renderCoursesShowcase();
           this.populateCoursesDropdown();
         }
 
         if (profile) {
           this.academyProfile = profile;
-          localStorage.setItem(STORAGE_KEYS.ACADEMY_PROFILE, JSON.stringify(profile));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.ACADEMY_PROFILE), JSON.stringify(profile));
           this.renderBranding();
         }
 
         if (Array.isArray(students) && students.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.STUDENTS), JSON.stringify(students));
         }
 
         if (authToken && authToken.code && authToken.expiresAt) {
-          localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, JSON.stringify(authToken));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.AUTH_TOKEN), JSON.stringify(authToken));
         }
         return true;
       }
     } catch (e) {
-      // Local storage fallback
+      console.info('[PublicApp] Operating in local storage caching for', this.currentAcademySlug);
     }
     return false;
   }
@@ -854,12 +891,14 @@ class PublicAcademyApp {
       qualification: qualification,
       status: 'Active',
       joinDate: joinDate,
-      enrolledCourseIds: [courseId]
+      enrolledCourseIds: [courseId],
+      ownerEmail: this.currentOwnerEmail,
+      academySlug: this.currentAcademySlug
     };
 
-    // Save to local storage students registry
+    // Save to local storage students registry for this tenant
     let allStudents = [];
-    const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    const rawStudents = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.STUDENTS));
     if (rawStudents) {
       try {
         allStudents = JSON.parse(rawStudents) || [];
@@ -869,15 +908,19 @@ class PublicAcademyApp {
     }
 
     allStudents.unshift(newStudent);
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(allStudents));
+    localStorage.setItem(this.getStorageKey(STORAGE_KEYS.STUDENTS), JSON.stringify(allStudents));
 
-    // Post to Vercel KV cloud storage in background
+    // Post to Multi-Tenant MongoDB cloud storage in background
     fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'add_student',
-        payload: { student: newStudent }
+        payload: {
+          student: newStudent,
+          ownerEmail: this.currentOwnerEmail,
+          academySlug: this.currentAcademySlug
+        }
       })
     }).catch(() => {});
 
@@ -962,22 +1005,22 @@ class PublicAcademyApp {
       return;
     }
 
-    // Try to fetch latest students from cloud for real-time verification
+    // Try to fetch latest students for this specific academy tenant from cloud
     let allStudents = [];
     try {
-      const response = await fetch('/api/data', { cache: 'no-store' });
+      const response = await fetch(`/api/data?academy=${encodeURIComponent(this.currentAcademySlug)}`, { cache: 'no-store' });
       if (response.ok) {
         const json = await response.json();
         if (json?.success && Array.isArray(json.data?.students)) {
           allStudents = json.data.students;
-          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(allStudents));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.STUDENTS), JSON.stringify(allStudents));
         }
       }
     } catch (err) {}
 
-    // Fallback to local storage if needed
+    // Fallback to tenant local storage if needed
     if (allStudents.length === 0) {
-      const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+      const rawStudents = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.STUDENTS));
       if (rawStudents) {
         try {
           allStudents = JSON.parse(rawStudents) || [];

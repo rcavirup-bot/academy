@@ -86,15 +86,20 @@ function getInitials(name) {
 // 2. State & Storage Management
 // ==========================================================================
 class AcademyStore {
-  constructor() {
+  constructor(ownerEmail = 'dasprantik76@gmail.com') {
+    this.ownerEmail = (ownerEmail || 'dasprantik76@gmail.com').toLowerCase().trim();
     this.courses = [];
     this.students = [];
     this.init();
   }
 
+  getStorageKey(baseKey) {
+    return `${baseKey}_${this.ownerEmail}`;
+  }
+
   init() {
-    const rawCourses = localStorage.getItem(STORAGE_KEYS.COURSES);
-    const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    const rawCourses = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.COURSES));
+    const rawStudents = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.STUDENTS));
 
     if (rawCourses) {
       try {
@@ -117,40 +122,38 @@ class AcademyStore {
     }
   }
 
-  // Asynchronously synchronize with Vercel KV Cloud Storage (/api/data)
+  // Asynchronously synchronize with MongoDB Multi-Tenant Cloud Storage (/api/data)
   async fetchCloudData(onLoadedCallback) {
     try {
-      const response = await fetch('/api/data', { cache: 'no-store' });
+      const response = await fetch(`/api/data?ownerEmail=${encodeURIComponent(this.ownerEmail)}`, { cache: 'no-store' });
       if (!response.ok) return false;
       const json = await response.json();
       if (json && json.success && json.data) {
         const { profile, courses, students, authToken } = json.data;
 
-        // If cloud has courses, sync locally; if cloud is empty but local has courses, seed cloud
         if (Array.isArray(courses) && courses.length > 0) {
           this.courses = courses;
-          localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(this.courses));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.COURSES), JSON.stringify(this.courses));
         } else if (this.courses.length > 0) {
           this.syncToCloud('save_courses', { courses: this.courses });
         }
 
-        // If cloud has students, sync locally; if cloud is empty but local has students, seed cloud
         if (Array.isArray(students) && students.length > 0) {
           this.students = students;
-          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(this.students));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.STUDENTS), JSON.stringify(this.students));
         } else if (this.students.length > 0) {
           this.syncToCloud('save_students', { students: this.students });
         }
 
         if (profile) {
-          localStorage.setItem(STORAGE_KEYS.ACADEMY_PROFILE, JSON.stringify(profile));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.ACADEMY_PROFILE), JSON.stringify(profile));
         } else {
           const localProfile = this.getAcademyProfile();
           if (localProfile) this.syncToCloud('save_profile', { profile: localProfile });
         }
 
         if (authToken && authToken.code && authToken.expiresAt && Date.now() < authToken.expiresAt) {
-          localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, JSON.stringify(authToken));
+          localStorage.setItem(this.getStorageKey(STORAGE_KEYS.AUTH_TOKEN), JSON.stringify(authToken));
         }
 
         if (typeof onLoadedCallback === 'function') {
@@ -159,8 +162,7 @@ class AcademyStore {
         return true;
       }
     } catch (e) {
-      // Local-first fallback (running locally without serverless /api route)
-      console.info('[AcademyStore] Operating with local storage caching');
+      console.info('[AcademyStore] Operating in local storage caching for', this.ownerEmail);
     }
     return false;
   }
@@ -170,7 +172,13 @@ class AcademyStore {
       const response = await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, payload })
+        body: JSON.stringify({
+          action,
+          payload: {
+            ...payload,
+            ownerEmail: this.ownerEmail
+          }
+        })
       });
       return response.ok;
     } catch (e) {
@@ -179,8 +187,8 @@ class AcademyStore {
   }
 
   save() {
-    localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(this.courses));
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(this.students));
+    localStorage.setItem(this.getStorageKey(STORAGE_KEYS.COURSES), JSON.stringify(this.courses));
+    localStorage.setItem(this.getStorageKey(STORAGE_KEYS.STUDENTS), JSON.stringify(this.students));
   }
 
   clearAllData() {
@@ -192,8 +200,25 @@ class AcademyStore {
 
   // Academy Profile (Universal SaaS Multi-Owner Setup)
   getAcademyProfile() {
-    const raw = localStorage.getItem(STORAGE_KEYS.ACADEMY_PROFILE);
-    if (!raw) return null;
+    const raw = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.ACADEMY_PROFILE));
+    if (!raw) {
+      if (this.ownerEmail.includes('poulami')) {
+        return {
+          academyName: 'Poulami Dance Academy',
+          ownerName: 'Poulami',
+          email: this.ownerEmail,
+          phone: '9876543211',
+          slug: 'poulami'
+        };
+      }
+      return {
+        academyName: 'Prantik Computer Academy',
+        ownerName: 'Prantik Das',
+        email: this.ownerEmail,
+        phone: '9876543210',
+        slug: 'prantik'
+      };
+    }
     try {
       return JSON.parse(raw);
     } catch (e) {
@@ -202,15 +227,16 @@ class AcademyStore {
   }
 
   saveAcademyProfile(profile) {
-    localStorage.setItem(STORAGE_KEYS.ACADEMY_PROFILE, JSON.stringify(profile));
-    this.syncToCloud('save_profile', { profile });
+    const updated = { ...profile, ownerEmail: this.ownerEmail };
+    localStorage.setItem(this.getStorageKey(STORAGE_KEYS.ACADEMY_PROFILE), JSON.stringify(updated));
+    this.syncToCloud('save_profile', { profile: updated });
   }
 
   // Authentication Token (6-Digit OTP, 5-Hour Expiry)
   getOrGenerateAuthToken(forceNew = false) {
     const AUTH_DURATION = 5 * 60 * 60 * 1000; // 5 hours in milliseconds
     if (!forceNew) {
-      const raw = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+      const raw = localStorage.getItem(this.getStorageKey(STORAGE_KEYS.AUTH_TOKEN));
       if (raw) {
         try {
           const token = JSON.parse(raw);
@@ -225,9 +251,10 @@ class AcademyStore {
     const token = {
       code: randomCode,
       createdAt: Date.now(),
-      expiresAt: Date.now() + AUTH_DURATION
+      expiresAt: Date.now() + AUTH_DURATION,
+      ownerEmail: this.ownerEmail
     };
-    localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, JSON.stringify(token));
+    localStorage.setItem(this.getStorageKey(STORAGE_KEYS.AUTH_TOKEN), JSON.stringify(token));
     this.syncToCloud('save_auth_token', { token });
     return token;
   }
@@ -351,8 +378,17 @@ class AcademyStore {
   }
 }
 
-// Global Store Instance
-const store = new AcademyStore();
+// Resolve Active Session Owner Email for Tenant Partitioning
+let activeAdminEmail = 'dasprantik76@gmail.com';
+try {
+  const sessionData = JSON.parse(localStorage.getItem(STORAGE_KEYS.SESSION) || '{}');
+  if (sessionData?.email) {
+    activeAdminEmail = sessionData.email.toLowerCase().trim();
+  }
+} catch (e) {}
+
+// Global Store Instance for Active Multi-Tenant Owner
+const store = new AcademyStore(activeAdminEmail);
 
 
 // ==========================================================================
@@ -370,7 +406,7 @@ class UIController {
     try {
       this.session = JSON.parse(rawSession);
       const userEmail = (this.session?.email || '').toLowerCase().trim();
-      const ALLOWED_ADMINS = ['poulami.13thmay@gmail.com'];
+      const ALLOWED_ADMINS = ['poulami.13thmay@gmail.com', 'dasprantik76@gmail.com'];
       if (!this.session || this.session.provider !== 'google' || !ALLOWED_ADMINS.includes(userEmail)) {
         localStorage.removeItem(STORAGE_KEYS.SESSION);
         window.location.href = 'login.html';
@@ -381,6 +417,10 @@ class UIController {
       window.location.href = 'login.html';
       return;
     }
+
+    // Ensure store is set for this session's owner email
+    store.ownerEmail = this.session.email.toLowerCase().trim();
+    store.init();
 
     this.currentView = 'dashboard';
     this.confirmCallback = null;
@@ -397,13 +437,24 @@ class UIController {
     this.render();
     this.startAuthCountdownTimer();
     this.checkOnboarding();
+    this.updatePublicSiteLink();
 
-    // Synchronize with Vercel KV cloud storage in background
+    // Synchronize with Multi-Tenant MongoDB cloud storage in background
     store.fetchCloudData(() => {
       this.populateCourseFilterDropdown();
       this.populateCourseDropdownInStudentModal();
       this.render();
+      this.updatePublicSiteLink();
     });
+  }
+
+  updatePublicSiteLink() {
+    const profile = store.getAcademyProfile();
+    const slug = profile?.slug || (this.session?.email?.includes('poulami') ? 'poulami' : 'prantik');
+    const btnViewPublicSite = document.getElementById('btnViewPublicSite');
+    if (btnViewPublicSite) {
+      btnViewPublicSite.href = `index.html?academy=${encodeURIComponent(slug)}`;
+    }
   }
 
   cacheDOMElements() {

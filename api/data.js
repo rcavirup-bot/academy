@@ -1,5 +1,5 @@
 // Vercel Serverless Function: /api/data.js
-// Interfaces with MongoDB for persistent Academy data management
+// Multi-Tenant MongoDB Partitioned SaaS API for Academy Platform
 
 import { getDatabase } from './lib/mongodb.js';
 
@@ -8,6 +8,80 @@ const COLLECTIONS = {
   COURSES: 'courses',
   STUDENTS: 'students',
   AUTH_TOKEN: 'auth_token'
+};
+
+// Default seed profiles for multi-tenant academies
+const DEFAULT_TENANTS = {
+  'dasprantik76@gmail.com': {
+    ownerEmail: 'dasprantik76@gmail.com',
+    academyName: 'Prantik Computer Academy',
+    ownerName: 'Prantik Das',
+    email: 'dasprantik76@gmail.com',
+    phone: '9876543210',
+    slug: 'prantik',
+    category: 'Computer Science & Information Technology',
+    about: 'Premier professional computer and software training academy offering certified courses.'
+  },
+  'poulami.13thmay@gmail.com': {
+    ownerEmail: 'poulami.13thmay@gmail.com',
+    academyName: 'Poulami Dance Academy',
+    ownerName: 'Poulami',
+    email: 'poulami.13thmay@gmail.com',
+    phone: '9876543211',
+    slug: 'poulami',
+    category: 'Performing Arts & Classical Dance',
+    about: 'Dedicated institute for Classical Dance, Bharatanatyam, Kathak, and Contemporary Dance training.'
+  }
+};
+
+// Default sample courses for new academies
+const DEFAULT_COURSES_BY_TENANT = {
+  'dasprantik76@gmail.com': [
+    {
+      id: 'CRS-101',
+      title: 'Diploma in Computer Applications (DCA)',
+      duration: '6 Months',
+      description: 'Comprehensive fundamentals of computer operations, MS Office suite, Internet basics, and database concepts.',
+      ownerEmail: 'dasprantik76@gmail.com'
+    },
+    {
+      id: 'CRS-102',
+      title: 'Full Stack Web Development',
+      duration: '1 Year',
+      description: 'Modern front-end and back-end web development with HTML5, CSS3, JavaScript, Node.js, and Databases.',
+      ownerEmail: 'dasprantik76@gmail.com'
+    },
+    {
+      id: 'CRS-103',
+      title: 'Post Graduate Diploma in Computer Applications (PGDCA)',
+      duration: '1 Year',
+      description: 'Advanced programming concepts, system architecture, database administration, and project implementation.',
+      ownerEmail: 'dasprantik76@gmail.com'
+    }
+  ],
+  'poulami.13thmay@gmail.com': [
+    {
+      id: 'CRS-201',
+      title: 'Classical Bharatanatyam (Foundation & Advanced)',
+      duration: '1 Year',
+      description: 'Traditional Margam repertoire, Adavus, Mudras, rhythmic Abhinaya, and stage performance mastery.',
+      ownerEmail: 'poulami.13thmay@gmail.com'
+    },
+    {
+      id: 'CRS-202',
+      title: 'Kathak Dance Certification',
+      duration: '6 Months',
+      description: 'Tatkar footwork, Chakkars, Thaat, Tukras, and expressive storytelling through rhythm.',
+      ownerEmail: 'poulami.13thmay@gmail.com'
+    },
+    {
+      id: 'CRS-203',
+      title: 'Contemporary & Creative Movement',
+      duration: '6 Months',
+      description: 'Fluid choreography, body alignment, contemporary expression, and stage performance techniques.',
+      ownerEmail: 'poulami.13thmay@gmail.com'
+    }
+  ]
 };
 
 export default async function handler(req, res) {
@@ -45,21 +119,79 @@ export default async function handler(req, res) {
     });
   }
 
+  // Helper to resolve tenant email from request
+  async function resolveOwnerEmail(queryEmail, querySlug, reqHost) {
+    let email = (queryEmail || '').toLowerCase().trim();
+    let slug = (querySlug || '').toLowerCase().trim();
+
+    // Check host header for custom subdomains (e.g. prantik.pixelsetu.com)
+    if (!slug && reqHost) {
+      const parts = reqHost.toLowerCase().split('.');
+      if (parts.length >= 3) {
+        const sub = parts[0];
+        if (sub !== 'www' && sub !== 'academy' && sub !== 'app') {
+          slug = sub;
+        }
+      }
+    }
+
+    if (!email && slug) {
+      if (slug === 'prantik' || slug === 'dasprantik76@gmail.com') {
+        email = 'dasprantik76@gmail.com';
+      } else if (slug === 'poulami' || slug === 'poulami.13thmay@gmail.com') {
+        email = 'poulami.13thmay@gmail.com';
+      } else {
+        const profileDoc = await db.collection(COLLECTIONS.PROFILE).findOne({ slug }, { projection: { _id: 0 } });
+        if (profileDoc && profileDoc.ownerEmail) {
+          email = profileDoc.ownerEmail;
+        }
+      }
+    }
+
+    // Default tenant fallback if none matched
+    if (!email) {
+      email = 'dasprantik76@gmail.com';
+    }
+    return email;
+  }
+
   // --------------------------------------------------------------------------
-  // GET: Fetch all Academy Data
+  // GET: Fetch Academy Data for Specific Tenant
   // --------------------------------------------------------------------------
   if (req.method === 'GET') {
     try {
-      const [profileDoc, coursesList, studentsList, authTokenDoc] = await Promise.all([
-        db.collection(COLLECTIONS.PROFILE).findOne({}, { projection: { _id: 0 } }),
-        db.collection(COLLECTIONS.COURSES).find({}, { projection: { _id: 0 } }).toArray(),
-        db.collection(COLLECTIONS.STUDENTS).find({}, { projection: { _id: 0 } }).sort({ _id: -1 }).toArray(),
-        db.collection(COLLECTIONS.AUTH_TOKEN).findOne({}, { projection: { _id: 0 } })
+      const ownerEmail = await resolveOwnerEmail(req.query.ownerEmail, req.query.academy, req.headers.host);
+
+      let [profileDoc, coursesList, studentsList, authTokenDoc] = await Promise.all([
+        db.collection(COLLECTIONS.PROFILE).findOne({ ownerEmail }, { projection: { _id: 0 } }),
+        db.collection(COLLECTIONS.COURSES).find({ ownerEmail }, { projection: { _id: 0 } }).toArray(),
+        db.collection(COLLECTIONS.STUDENTS).find({ ownerEmail }, { projection: { _id: 0 } }).sort({ _id: -1 }).toArray(),
+        db.collection(COLLECTIONS.AUTH_TOKEN).findOne({ ownerEmail }, { projection: { _id: 0 } })
       ]);
+
+      // Auto-seed profile if this is a default tenant and profile doesn't exist yet
+      if (!profileDoc && DEFAULT_TENANTS[ownerEmail]) {
+        profileDoc = DEFAULT_TENANTS[ownerEmail];
+        await db.collection(COLLECTIONS.PROFILE).updateOne(
+          { ownerEmail },
+          { $set: profileDoc },
+          { upsert: true }
+        );
+      }
+
+      // Auto-seed sample courses if empty for default tenants
+      if ((!coursesList || coursesList.length === 0) && DEFAULT_COURSES_BY_TENANT[ownerEmail]) {
+        coursesList = DEFAULT_COURSES_BY_TENANT[ownerEmail];
+        await db.collection(COLLECTIONS.COURSES).insertMany(coursesList);
+      }
 
       return res.status(200).json({
         success: true,
         isConfigured: true,
+        tenant: {
+          ownerEmail,
+          slug: profileDoc?.slug || (ownerEmail.includes('poulami') ? 'poulami' : 'prantik')
+        },
         data: {
           profile: profileDoc || null,
           courses: Array.isArray(coursesList) ? coursesList : [],
@@ -78,7 +210,7 @@ export default async function handler(req, res) {
   }
 
   // --------------------------------------------------------------------------
-  // POST: Mutate Academy Data
+  // POST: Mutate Academy Data for Specific Tenant
   // --------------------------------------------------------------------------
   if (req.method === 'POST') {
     try {
@@ -88,28 +220,32 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: 'Missing action parameter' });
       }
 
+      const ownerEmail = await resolveOwnerEmail(payload?.ownerEmail, payload?.academySlug);
+
       switch (action) {
         // 1. Save Academy Profile
         case 'save_profile': {
           if (!payload?.profile) {
             return res.status(400).json({ success: false, error: 'Missing profile in payload' });
           }
+          const updatedProfile = { ...payload.profile, ownerEmail };
           await db.collection(COLLECTIONS.PROFILE).updateOne(
-            {},
-            { $set: payload.profile },
+            { ownerEmail },
+            { $set: updatedProfile },
             { upsert: true }
           );
-          return res.status(200).json({ success: true, profile: payload.profile });
+          return res.status(200).json({ success: true, profile: updatedProfile });
         }
 
-        // 2. Save All Courses (Batch replace)
+        // 2. Save All Courses
         case 'save_courses': {
           const courses = Array.isArray(payload?.courses) ? payload.courses : [];
-          await db.collection(COLLECTIONS.COURSES).deleteMany({});
-          if (courses.length > 0) {
-            await db.collection(COLLECTIONS.COURSES).insertMany(courses);
+          const taggedCourses = courses.map(c => ({ ...c, ownerEmail }));
+          await db.collection(COLLECTIONS.COURSES).deleteMany({ ownerEmail });
+          if (taggedCourses.length > 0) {
+            await db.collection(COLLECTIONS.COURSES).insertMany(taggedCourses);
           }
-          return res.status(200).json({ success: true, courses });
+          return res.status(200).json({ success: true, courses: taggedCourses });
         }
 
         // 3. Add or Update a Single Course
@@ -118,12 +254,13 @@ export default async function handler(req, res) {
           if (!course || !course.id) {
             return res.status(400).json({ success: false, error: 'Invalid course payload' });
           }
+          const taggedCourse = { ...course, ownerEmail };
           await db.collection(COLLECTIONS.COURSES).updateOne(
-            { id: course.id },
-            { $set: course },
+            { id: course.id, ownerEmail },
+            { $set: taggedCourse },
             { upsert: true }
           );
-          const updatedCourses = await db.collection(COLLECTIONS.COURSES).find({}, { projection: { _id: 0 } }).toArray();
+          const updatedCourses = await db.collection(COLLECTIONS.COURSES).find({ ownerEmail }, { projection: { _id: 0 } }).toArray();
           return res.status(200).json({ success: true, courses: updatedCourses });
         }
 
@@ -133,19 +270,20 @@ export default async function handler(req, res) {
           if (!courseId) {
             return res.status(400).json({ success: false, error: 'Missing courseId' });
           }
-          await db.collection(COLLECTIONS.COURSES).deleteOne({ id: courseId });
-          const updatedCourses = await db.collection(COLLECTIONS.COURSES).find({}, { projection: { _id: 0 } }).toArray();
+          await db.collection(COLLECTIONS.COURSES).deleteOne({ id: courseId, ownerEmail });
+          const updatedCourses = await db.collection(COLLECTIONS.COURSES).find({ ownerEmail }, { projection: { _id: 0 } }).toArray();
           return res.status(200).json({ success: true, courses: updatedCourses });
         }
 
-        // 5. Save All Students (Batch replace)
+        // 5. Save All Students
         case 'save_students': {
           const students = Array.isArray(payload?.students) ? payload.students : [];
-          await db.collection(COLLECTIONS.STUDENTS).deleteMany({});
-          if (students.length > 0) {
-            await db.collection(COLLECTIONS.STUDENTS).insertMany(students);
+          const taggedStudents = students.map(s => ({ ...s, ownerEmail }));
+          await db.collection(COLLECTIONS.STUDENTS).deleteMany({ ownerEmail });
+          if (taggedStudents.length > 0) {
+            await db.collection(COLLECTIONS.STUDENTS).insertMany(taggedStudents);
           }
-          return res.status(200).json({ success: true, students });
+          return res.status(200).json({ success: true, students: taggedStudents });
         }
 
         // 6. Add New Student Registration (From Public Site)
@@ -154,8 +292,9 @@ export default async function handler(req, res) {
           if (!student || !student.fullName || !student.phone) {
             return res.status(400).json({ success: false, error: 'Invalid student registration payload' });
           }
-          await db.collection(COLLECTIONS.STUDENTS).insertOne(student);
-          return res.status(200).json({ success: true, student });
+          const taggedStudent = { ...student, ownerEmail };
+          await db.collection(COLLECTIONS.STUDENTS).insertOne(taggedStudent);
+          return res.status(200).json({ success: true, student: taggedStudent });
         }
 
         // 7. Update Single Student (From Admin Portal)
@@ -165,11 +304,11 @@ export default async function handler(req, res) {
             return res.status(400).json({ success: false, error: 'Missing studentId or updatedData' });
           }
           const result = await db.collection(COLLECTIONS.STUDENTS).updateOne(
-            { id: studentId },
+            { id: studentId, ownerEmail },
             { $set: updatedData }
           );
           if (result.matchedCount > 0) {
-            const updatedStudent = await db.collection(COLLECTIONS.STUDENTS).findOne({ id: studentId }, { projection: { _id: 0 } });
+            const updatedStudent = await db.collection(COLLECTIONS.STUDENTS).findOne({ id: studentId, ownerEmail }, { projection: { _id: 0 } });
             return res.status(200).json({ success: true, student: updatedStudent });
           }
           return res.status(404).json({ success: false, error: 'Student not found' });
@@ -182,7 +321,7 @@ export default async function handler(req, res) {
             return res.status(400).json({ success: false, error: 'Invalid bulk update payload' });
           }
           const result = await db.collection(COLLECTIONS.STUDENTS).updateMany(
-            { id: { $in: studentIds } },
+            { id: { $in: studentIds }, ownerEmail },
             { $set: updateFields }
           );
           return res.status(200).json({ success: true, modifiedCount: result.modifiedCount });
@@ -194,7 +333,7 @@ export default async function handler(req, res) {
           if (!studentId) {
             return res.status(400).json({ success: false, error: 'Missing studentId' });
           }
-          await db.collection(COLLECTIONS.STUDENTS).deleteOne({ id: studentId });
+          await db.collection(COLLECTIONS.STUDENTS).deleteOne({ id: studentId, ownerEmail });
           return res.status(200).json({ success: true, studentId });
         }
 
@@ -204,21 +343,22 @@ export default async function handler(req, res) {
           if (!token || !token.code) {
             return res.status(400).json({ success: false, error: 'Invalid token payload' });
           }
+          const taggedToken = { ...token, ownerEmail };
           await db.collection(COLLECTIONS.AUTH_TOKEN).updateOne(
-            {},
-            { $set: token },
+            { ownerEmail },
+            { $set: taggedToken },
             { upsert: true }
           );
-          return res.status(200).json({ success: true, token });
+          return res.status(200).json({ success: true, token: taggedToken });
         }
 
-        // 11. Clear All Data (Admin Demo Reset)
+        // 11. Clear All Data (For specific owner only)
         case 'clear_all': {
           await Promise.all([
-            db.collection(COLLECTIONS.COURSES).deleteMany({}),
-            db.collection(COLLECTIONS.STUDENTS).deleteMany({})
+            db.collection(COLLECTIONS.COURSES).deleteMany({ ownerEmail }),
+            db.collection(COLLECTIONS.STUDENTS).deleteMany({ ownerEmail })
           ]);
-          return res.status(200).json({ success: true, message: 'All student and course records cleared from MongoDB' });
+          return res.status(200).json({ success: true, message: `All student and course records cleared for ${ownerEmail}` });
         }
 
         default:
