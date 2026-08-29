@@ -371,13 +371,15 @@ class UIController {
       this.session = JSON.parse(rawSession);
       const userEmail = (this.session?.email || '').toLowerCase().trim();
       const ALLOWED_ADMINS = ['poulami.13thmay@gmail.com'];
-      if (this.session.provider === 'google' && !ALLOWED_ADMINS.includes(userEmail)) {
+      if (!this.session || this.session.provider !== 'google' || !ALLOWED_ADMINS.includes(userEmail)) {
         localStorage.removeItem(STORAGE_KEYS.SESSION);
         window.location.href = 'login.html';
         return;
       }
     } catch (e) {
-      this.session = { name: 'Poulami', email: 'poulami.13thmay@gmail.com' };
+      localStorage.removeItem(STORAGE_KEYS.SESSION);
+      window.location.href = 'login.html';
+      return;
     }
 
     this.currentView = 'dashboard';
