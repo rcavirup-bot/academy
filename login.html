@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Academy by PixelSetu | Admin Sign In</title>
+  <meta name="description" content="Sign in to Academy by PixelSetu - Universal Academy Management Portal">
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Google Identity Services SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="admin-style.css?v=2.0">
+</head>
+<body class="login-body">
+  <div class="login-container">
+    <div class="login-card">
+      <!-- Brand Header -->
+      <div class="login-brand">
+        <div class="brand-logo-large">
+          <i class="fa-solid fa-graduation-cap"></i>
+        </div>
+        <h2>Academy</h2>
+        <p class="login-subtitle">by <strong>PixelSetu</strong></p>
+      </div>
+
+      <!-- Alert Box -->
+      <div class="login-alert" id="loginAlert" style="display: none;">
+        <i class="fa-solid fa-circle-exclamation"></i>
+        <span id="loginAlertText">Authentication message</span>
+      </div>
+
+      <!-- Google Sign In Section -->
+      <div class="login-actions">
+        <div class="google-btn-wrapper" id="googleBtnWrapper">
+          <div id="googleSignInBtn"></div>
+        </div>
+
+        <div class="login-divider">
+          <span>OR</span>
+        </div>
+
+        <!-- Quick Demo Login Button -->
+        <button class="btn btn-primary btn-block btn-demo-login" id="btnQuickDemoLogin">
+          <i class="fa-solid fa-user-shield"></i>
+          <span>Continue as Admin (Demo)</span>
+        </button>
+      </div>
+
+      <!-- Google Client ID Setup Toggle -->
+      <div class="client-id-config-box">
+        <button type="button" class="btn-toggle-config" id="btnToggleConfig">
+          <i class="fa-solid fa-gear"></i> Configure Google Client ID <i class="fa-solid fa-chevron-down toggle-icon" id="configToggleIcon"></i>
+        </button>
+        <div class="config-content" id="configContent" style="display: none;">
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label for="customClientId">Google OAuth Client ID</label>
+            <div class="input-icon-wrap">
+              <i class="fa-solid fa-key"></i>
+              <input type="text" id="customClientId" placeholder="YOUR_CLIENT_ID.apps.googleusercontent.com">
+            </div>
+            <p class="field-hint" style="margin-top: 0.35rem;">
+              Create this in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: underline;">Google Cloud Console</a> with origin <code>http://localhost:3000</code>.
+            </p>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSaveClientId" style="margin-top: 0.5rem; width: 100%;">
+              Save & Apply Client ID
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Security Notice -->
+      <div class="login-footer">
+        <div class="security-tag">
+          <i class="fa-solid fa-lock"></i>
+          <span>End-to-End Secure Administrative Gateway</span>
+        </div>
+        <div style="margin-top: 0.85rem; text-align: center;">
+          <a href="index.html" style="color: #94a3b8; font-size: 0.8125rem; font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem; transition: color 0.15s ease;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Public Website
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Login Logic Script -->
+  <script>
+    const DEFAULT_CLIENT_ID_KEY = 'educore_google_client_id';
+    const SESSION_KEY = 'educore_admin_session';
+
+    // Check if already logged in -> redirect to admin dashboard
+    const existingSession = localStorage.getItem(SESSION_KEY);
+    if (existingSession) {
+      try {
+        const session = JSON.parse(existingSession);
+        if (session && session.email) {
+          window.location.href = 'admin.html';
+        }
+      } catch (e) {}
+    }
+
+    // Google Sign-In Initialization
+    function initGoogleAuth() {
+      const savedClientId = localStorage.getItem(DEFAULT_CLIENT_ID_KEY) || 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+      const clientIdInput = document.getElementById('customClientId');
+      if (clientIdInput && savedClientId !== 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com') {
+        clientIdInput.value = savedClientId;
+      }
+
+      if (window.google && window.google.accounts && window.google.accounts.id) {
+        window.google.accounts.id.initialize({
+          client_id: savedClientId,
+          callback: handleGoogleCredentialResponse,
+          auto_select: false
+        });
+
+        window.google.accounts.id.renderButton(
+          document.getElementById('googleSignInBtn'),
+          {
+            theme: 'outline',
+            size: 'large',
+            type: 'standard',
+            shape: 'rectangular',
+            text: 'signin_with',
+            logo_alignment: 'left',
+            width: 320
+          }
+        );
+      }
+    }
+
+    // Handle Google Login Callback
+    function handleGoogleCredentialResponse(response) {
+      if (!response.credential) {
+        showLoginAlert('Google Sign-In failed. Please try again.', 'error');
+        return;
+      }
+
+      try {
+        // Decode JWT payload (base64)
+        const base64Url = response.credential.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+
+        const payload = JSON.parse(jsonPayload);
+
+        const session = {
+          name: payload.name || 'Super Administrator',
+          email: payload.email || 'admin@educore.edu',
+          avatar: payload.picture || '',
+          provider: 'google',
+          loggedInAt: Date.now()
+        };
+
+        localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        showLoginAlert(`Welcome back, ${session.name}! Redirecting...`, 'success');
+        
+        setTimeout(() => {
+          window.location.href = 'admin.html';
+        }, 800);
+      } catch (err) {
+        showLoginAlert('Failed to parse Google credentials.', 'error');
+      }
+    }
+
+    function showLoginAlert(message, type = 'error') {
+      const alertBox = document.getElementById('loginAlert');
+      const alertText = document.getElementById('loginAlertText');
+      if (alertBox && alertText) {
+        alertText.textContent = message;
+        alertBox.className = `login-alert ${type}`;
+        alertBox.style.display = 'flex';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Init Google Auth with slight delay to ensure SDK script is ready
+      if (window.google) {
+        initGoogleAuth();
+      } else {
+        window.addEventListener('load', initGoogleAuth);
+      }
+
+      // Quick Demo Admin Login
+      const btnQuickDemoLogin = document.getElementById('btnQuickDemoLogin');
+      if (btnQuickDemoLogin) {
+        btnQuickDemoLogin.addEventListener('click', () => {
+          const session = {
+            name: 'Pratik Das',
+            email: 'admin@educore.edu',
+            avatar: '',
+            provider: 'demo',
+            loggedInAt: Date.now()
+          };
+          localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+          showLoginAlert('Logged in as Administrator. Redirecting...', 'success');
+          setTimeout(() => {
+            window.location.href = 'admin.html';
+          }, 600);
+        });
+      }
+
+      // Config Drawer Toggle
+      const btnToggleConfig = document.getElementById('btnToggleConfig');
+      const configContent = document.getElementById('configContent');
+      const configToggleIcon = document.getElementById('configToggleIcon');
+      if (btnToggleConfig && configContent) {
+        btnToggleConfig.addEventListener('click', () => {
+          const isHidden = configContent.style.display === 'none';
+          configContent.style.display = isHidden ? 'block' : 'none';
+          if (configToggleIcon) {
+            configToggleIcon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+          }
+        });
+      }
+
+      // Save Custom Client ID
+      const btnSaveClientId = document.getElementById('btnSaveClientId');
+      const customClientIdInput = document.getElementById('customClientId');
+      if (btnSaveClientId && customClientIdInput) {
+        btnSaveClientId.addEventListener('click', () => {
+          const val = customClientIdInput.value.trim();
+          if (!val) {
+            showLoginAlert('Please enter a valid Google Client ID.', 'error');
+            return;
+          }
+          localStorage.setItem(DEFAULT_CLIENT_ID_KEY, val);
+          showLoginAlert('Google Client ID saved. Re-initializing...', 'success');
+          setTimeout(() => {
+            initGoogleAuth();
+          }, 500);
+        });
+      }
+    });
+  </script>
+</body>
+</html>
